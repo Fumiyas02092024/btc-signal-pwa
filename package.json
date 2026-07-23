@@ -1,0 +1,27 @@
+{
+  "name": "btc-regime-watch",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BTC regime and pullback signal PWA with Cloudflare Workers Web Push",
+  "scripts": {
+    "dev": "wrangler dev --config worker/wrangler.jsonc",
+    "deploy": "wrangler deploy --config worker/wrangler.jsonc",
+    "cf-typegen": "wrangler types --config worker/wrangler.jsonc",
+    "vapid": "node scripts/generate-vapid-keys.mjs",
+    "test": "node --test",
+    "check": "node --check app.js && node --check strategy.js && node --check sw.js && node --check worker/src/index.js && npm test"
+  },
+  "dependencies": {
+    "@block65/webcrypto-web-push": "^1.0.2"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "overrides": {
+    "sharp": "^0.35.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
