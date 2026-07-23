@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>BTC シグナルモニター</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #ffa657;
+    --purple: #bc8cff;
+    --blue: #58a6ff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+    padding: 12px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+  }
+  h1 { font-size: 1.1rem; display: flex; align-items: center; gap: 8px; }
+  h1 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  h1 .dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .price-big { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .price-big small { font-size: 0.8rem; color: var(--muted); font-weight: 400; }
+  .grid {
+    display: grid; gap: 8px; margin-bottom: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 12px;
+  }
+  .card .label { font-size: 0.72rem; color: var(--muted); margin-bottom: 4px; }
+  .card .value { font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .up { color: var(--green); } .down { color: var(--red); } .neutral { color: var(--muted); }
+  #chartWrap {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px; margin-bottom: 12px;
+  }
+  #chart { width: 100%; display: block; touch-action: pan-y; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.72rem; color: var(--muted); padding: 4px 6px 2px; }
+  .legend span::before { content: "—"; font-weight: 700; margin-right: 4px; }
+  .legend .l-sma50::before { color: var(--orange); }
+  .legend .l-sma200::before { color: var(--purple); }
+  .legend .l-bb::before { color: var(--blue); }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  button {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; cursor: pointer;
+  }
+  button:active { background: var(--border); }
+  button.primary { background: #1f6feb; border-color: #1f6feb; }
+  button.on { border-color: var(--green); color: var(--green); }
+  #signals { display: flex; flex-direction: column; gap: 6px; }
+  .sig {
+    background: var(--panel); border: 1px solid var(--border); border-left-width: 4px;
+    border-radius: 8px; padding: 8px 12px; font-size: 0.85rem;
+    display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  }
+  .sig.buy { border-left-color: var(--green); }
+  .sig.sell { border-left-color: var(--red); }
+  .sig.info { border-left-color: var(--blue); }
+  .sig time { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
+  h2 { font-size: 0.85rem; color: var(--muted); margin: 14px 0 8px; }
+  #status { font-size: 0.75rem; color: var(--muted); margin-top: 10px; }
+  .disclaimer { font-size: 0.7rem; color: var(--muted); margin-top: 14px; line-height: 1.5; }
+  .empty { color: var(--muted); font-size: 0.8rem; padding: 8px 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot" id="liveDot"></span>BTC シグナルモニター <small style="color:var(--muted);font-size:0.7rem">1時間足 / BTCUSDT</small></h1>
+  <div class="price-big" id="price">--<small> USDT</small></div>
+</header>
+
+<div class="grid">
+  <div class="card"><div class="label">トレンド (SMA50 vs SMA200)</div><div class="value" id="trend">--</div></div>
+  <div class="card"><div class="label">SMA50 / SMA200</div><div class="value" id="smaVals" style="font-size:0.85rem">--</div></div>
+  <div class="card"><div class="label">BB %B (バンド内位置)</div><div class="value" id="pctB">--</div></div>
+  <div class="card"><div class="label">BB バンド幅</div><div class="value" id="bbWidth">--</div></div>
+</div>
+
+<div id="chartWrap">
+  <div class="legend">
+    <span class="l-sma50">SMA50</span>
+    <span class="l-sma200">SMA200</span>
+    <span class="l-bb">BB(20, ±2σ)</span>
+  </div>
+  <canvas id="chart"></canvas>
+</div>
+
+<div class="controls">
+  <button id="notifyBtn">🔔 通知を有効にする</button>
+  <button id="refreshBtn">↻ 今すぐ更新</button>
+</div>
+
+<h2>シグナル履歴(確定足で判定)</h2>
+<div id="signals"><div class="empty">シグナルはまだありません。データ取得後、確定した1時間足ごとに判定します。</div></div>
+
+<div id="status">接続中…</div>
+
+<p class="disclaimer">
+  ⚠️ 本ツールはテクニカル指標に基づく「シグナル候補」を通知するものであり、利益や勝率を保証するものではありません。
+  いかなる指標も勝率100%にはなりません。売買の最終判断とリスク管理はご自身で行ってください。
+</p>
+
+<script>
+"use strict";
+
+// ---------- 設定 ----------
+const SYMBOL = "BTCUSDT";
+const INTERVAL = "1h";
+const LIMIT = 500;              // 200SMAに十分な本数
+const POLL_MS = 60_000;         // 60秒ごとに更新
+const CHART_CANDLES = 150;      // チャート表示本数
+const API_HOSTS = [
+  "https://api.binance.com",
+  "https://api1.binance.com",
+  "https://api2.binance.com",
+  "https://data-api.binance.vision"
+];
+
+// ---------- 状態 ----------
+let candles = [];               // {t, o, h, l, c}
+let lastEvaluatedCloseTime = Number(localStorage.getItem("lastEval") || 0);
+let signalLog = JSON.parse(localStorage.getItem("signalLog") || "[]");
+let notifyEnabled = false;
+
+// ---------- 指標計算 ----------
+function sma(values, period, i) {
+  if (i < period - 1) return null;
+  let s = 0;
+  for (let j = i - period + 1; j <= i; j++) s += values[j];
+  return s / period;
+}
+function bollinger(values, i, period = 20, mult = 2) {
+  const mid = sma(values, period, i);
+  if (mid === null) return null;
+  let v = 0;
+  for (let j = i - period + 1; j <= i; j++) v += (values[j] - mid) ** 2;
+  const sd = Math.sqrt(v / period);
+  return { mid, upper: mid + mult * sd, lower: mid - mult * sd, sd };
+}
+
+// ---------- データ取得 ----------
+async function fetchKlines() {
+  let lastErr;
+  for (const host of API_HOSTS) {
+    try {
+      const url = `${host}/api/v3/klines?symbol=${SYMBOL}&interval=${INTERVAL}&limit=${LIMIT}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.map(k => ({
+        t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], closeTime: k[6]
+      }));
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+
+// ---------- シグナル判定(確定足のみ) ----------
+function signalsAt(closes, i) {
+  const out = [];
+  const s50 = sma(closes, 50, i), s50p = sma(closes, 50, i - 1);
+  const s200 = sma(closes, 200, i), s200p = sma(closes, 200, i - 1);
+  const bb = bollinger(closes, i), bbp = bollinger(closes, i - 1);
+  const uptrend = s50 > s200;
+  const c = closes[i];
+
+  if (s50p <= s200p && s50 > s200)
+    out.push({ type: "buy", title: "🟢 ゴールデンクロス", detail: `SMA50がSMA200を上抜け(${fmt(c)})` });
+  if (s50p >= s200p && s50 < s200)
+    out.push({ type: "sell", title: "🔴 デッドクロス", detail: `SMA50がSMA200を下抜け(${fmt(c)})` });
+
+  if (bb && bbp) {
+    const prevC = closes[i - 1];
+    // -2σ割れ→バンド内復帰 = 押し目買い候補(上昇トレンド中は強め)
+    if (prevC < bbp.lower && c > bb.lower)
+      out.push({
+        type: "buy",
+        title: uptrend ? "🟢 BB下限反発(上昇トレンド中)" : "🟡 BB下限反発(下降トレンド中・慎重に)",
+        detail: `-2σ割れから復帰(${fmt(c)})`
+      });
+    // +2σ超え→バンド内復帰 = 利確・売り候補
+    if (prevC > bbp.upper && c < bb.upper)
+      out.push({
+        type: "sell",
+        title: uptrend ? "🟡 BB上限反落(上昇トレンド中・利確検討)" : "🔴 BB上限反落(下降トレンド中)",
+        detail: `+2σ超えから反落(${fmt(c)})`
+      });
+  }
+  return out.map(s => ({ ...s, time: candles[i].closeTime }));
+}
+
+function evaluateSignals() {
+  const closes = candles.map(c => c.c);
+  const n = candles.length;
+  // 最後の要素は未確定足。確定済み最終足 = n-2
+  const last = n - 2;
+  if (last < 201) return [];
+
+  // 初回はデータの範囲内で過去シグナルを遡って表示(通知はしない)
+  if (lastEvaluatedCloseTime === 0) {
+    const history = [];
+    for (let i = 201; i <= last; i++) history.push(...signalsAt(closes, i));
+    signalLog = history.reverse().slice(0, 100);
+    localStorage.setItem("signalLog", JSON.stringify(signalLog));
+    lastEvaluatedCloseTime = candles[last].closeTime;
+    localStorage.setItem("lastEval", String(lastEvaluatedCloseTime));
+    renderSignals();
+    return [];
+  }
+
+  const out = [];
+  for (let i = 201; i <= last; i++) {
+    if (candles[i].closeTime <= lastEvaluatedCloseTime) continue;
+    out.push(...signalsAt(closes, i));
+  }
+  lastEvaluatedCloseTime = candles[last].closeTime;
+  localStorage.setItem("lastEval", String(lastEvaluatedCloseTime));
+  return out;
+}
+
+// ---------- 通知 ----------
+async function notify(sig) {
+  if (!notifyEnabled || Notification.permission !== "granted") return;
+  const opts = { body: sig.detail + "\n" + new Date(sig.time).toLocaleString("ja-JP"), icon: "icon.svg", tag: "btc-signal-" + sig.time };
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) await reg.showNotification(sig.title, opts);
+    else new Notification(sig.title, opts);
+  } catch { try { new Notification(sig.title, opts); } catch {} }
+}
+
+// ---------- 表示 ----------
+const $ = id => document.getElementById(id);
+function fmt(v, d = 1) {
+  return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+function renderStats() {
+  const closes = candles.map(c => c.c);
+  const n = candles.length, i = n - 1;
+  const price = closes[i];
+  const prev = closes[i - 1];
+  const s50 = sma(closes, 50, i), s200 = sma(closes, 200, i);
+  const bb = bollinger(closes, i);
+
+  const priceEl = $("price");
+  priceEl.innerHTML = `${fmt(price)}<small> USDT</small>`;
+  priceEl.className = "price-big " + (price >= prev ? "up" : "down");
+
+  if (s50 && s200) {
+    const up = s50 > s200;
+    $("trend").textContent = up ? "上昇(GC継続中)" : "下降(DC継続中)";
+    $("trend").className = "value " + (up ? "up" : "down");
+    $("smaVals").textContent = `${fmt(s50, 0)} / ${fmt(s200, 0)}`;
+  }
+  if (bb) {
+    const pctB = (price - bb.lower) / (bb.upper - bb.lower);
+    const el = $("pctB");
+    el.textContent = (pctB * 100).toFixed(1) + "%";
+    el.className = "value " + (pctB > 1 ? "up" : pctB < 0 ? "down" : "neutral");
+    $("bbWidth").textContent = ((bb.upper - bb.lower) / bb.mid * 100).toFixed(2) + "%";
+  }
+}
+
+function renderSignals() {
+  const box = $("signals");
+  if (!signalLog.length) {
+    box.innerHTML = '<div class="empty">シグナルはまだありません。データ取得後、確定した1時間足ごとに判定します。</div>';
+    return;
+  }
+  box.innerHTML = signalLog.slice(0, 30).map(s => `
+    <div class="sig ${s.type}">
+      <span><strong>${s.title}</strong> — ${s.detail}</span>
+      <time>${new Date(s.time).toLocaleString("ja-JP")}</time>
+    </div>`).join("");
+}
+
+// ---------- チャート描画 ----------
+function drawChart() {
+  const canvas = $("chart");
+  const wrap = canvas.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+  const W = wrap.clientWidth - 16;
+  const H = Math.min(Math.max(W * 0.5, 240), 420);
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  const view = candles.slice(-CHART_CANDLES);
+  if (view.length < 2) return;
+  const closes = candles.map(c => c.c);
+  const offset = candles.length - view.length;
+
+  const padR = 62, padT = 8, padB = 20, padL = 4;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+
+  // 価格レンジ(BBも含める)
+  let lo = Infinity, hi = -Infinity;
+  view.forEach((c, k) => {
+    lo = Math.min(lo, c.l); hi = Math.max(hi, c.h);
+    const bb = bollinger(closes, offset + k);
+    if (bb) { lo = Math.min(lo, bb.lower); hi = Math.max(hi, bb.upper); }
+  });
+  const range = hi - lo || 1;
+  lo -= range * 0.03; hi += range * 0.03;
+  const y = v => padT + (hi - v) / (hi - lo) * plotH;
+  const x = k => padL + (k + 0.5) * (plotW / view.length);
+  const cw = Math.max(1, plotW / view.length * 0.65);
+
+  // グリッド + 価格軸
+  ctx.strokeStyle = "#21262d"; ctx.fillStyle = "#8b949e";
+  ctx.font = "10px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  const steps = 5;
+  for (let g = 0; g <= steps; g++) {
+    const v = lo + (hi - lo) * g / steps;
+    const yy = y(v);
+    ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(W - padR, yy); ctx.stroke();
+    ctx.fillText(fmt(v, 0), W - padR + 6, yy);
+  }
+  // 時間軸ラベル
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let k = 0; k < view.length; k += Math.ceil(view.length / 5)) {
+    const d = new Date(view[k].t);
+    ctx.fillText(`${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}時`, x(k), H - padB + 6);
+  }
+
+  // BB帯(塗り)
+  const bbPts = view.map((c, k) => bollinger(closes, offset + k));
+  ctx.beginPath();
+  let started = false;
+  bbPts.forEach((bb, k) => { if (bb) { const xx = x(k); if (!started) { ctx.moveTo(xx, y(bb.upper)); started = true; } else ctx.lineTo(xx, y(bb.upper)); } });
+  for (let k = bbPts.length - 1; k >= 0; k--) if (bbPts[k]) ctx.lineTo(x(k), y(bbPts[k].lower));
+  ctx.closePath();
+  ctx.fillStyle = "rgba(88,166,255,0.07)"; ctx.fill();
+  // BB上下線
+  ["upper", "lower", "mid"].forEach(key => {
+    ctx.beginPath(); started = false;
+    bbPts.forEach((bb, k) => { if (bb) { const xx = x(k), yy = y(bb[key]); if (!started) { ctx.moveTo(xx, yy); started = true; } else ctx.lineTo(xx, yy); } });
+    ctx.strokeStyle = key === "mid" ? "rgba(88,166,255,0.35)" : "rgba(88,166,255,0.6)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash(key === "mid" ? [3, 3] : []);
+    ctx.stroke(); ctx.setLineDash([]);
+  });
+
+  // ローソク足
+  view.forEach((c, k) => {
+    const up = c.c >= c.o;
+    ctx.strokeStyle = ctx.fillStyle = up ? "#3fb950" : "#f85149";
+    const xx = x(k);
+    ctx.beginPath(); ctx.moveTo(xx, y(c.h)); ctx.lineTo(xx, y(c.l)); ctx.lineWidth = 1; ctx.stroke();
+    const top = y(Math.max(c.o, c.c)), bot = y(Math.min(c.o, c.c));
+    ctx.fillRect(xx - cw / 2, top, cw, Math.max(1, bot - top));
+  });
+
+  // SMAライン
+  const drawSMA = (period, color) => {
+    ctx.beginPath(); let st = false;
+    view.forEach((c, k) => {
+      const v = sma(closes, period, offset + k);
+      if (v === null) return;
+      const xx = x(k), yy = y(v);
+      if (!st) { ctx.moveTo(xx, yy); st = true; } else ctx.lineTo(xx, yy);
+    });
+    ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.stroke();
+  };
+  drawSMA(50, "#ffa657");
+  drawSMA(200, "#bc8cff");
+}
+
+// ---------- メインループ ----------
+async function update() {
+  try {
+    candles = await fetchKlines();
+    $("liveDot").classList.add("live");
+    renderStats();
+    drawChart();
+    const newSigs = evaluateSignals();
+    if (newSigs.length) {
+      signalLog = [...newSigs.reverse(), ...signalLog].slice(0, 100);
+      localStorage.setItem("signalLog", JSON.stringify(signalLog));
+      newSigs.forEach(notify);
+    }
+    renderSignals();
+    $("status").textContent = `最終更新: ${new Date().toLocaleTimeString("ja-JP")}(60秒ごとに自動更新 / シグナル判定は足確定時)`;
+  } catch (e) {
+    $("liveDot").classList.remove("live");
+    $("status").textContent = `⚠️ データ取得に失敗しました: ${e.message}(再試行します)`;
+  }
+}
+
+// ---------- 初期化 ----------
+$("refreshBtn").addEventListener("click", update);
+$("notifyBtn").addEventListener("click", async () => {
+  if (!("Notification" in window)) { alert("このブラウザは通知に対応していません"); return; }
+  const perm = await Notification.requestPermission();
+  notifyEnabled = perm === "granted";
+  localStorage.setItem("notifyEnabled", notifyEnabled ? "1" : "0");
+  updateNotifyBtn();
+  if (notifyEnabled) notify({ title: "✅ 通知テスト", detail: "シグナル発生時にこの形式で通知します", time: Date.now() });
+});
+function updateNotifyBtn() {
+  const btn = $("notifyBtn");
+  if (notifyEnabled) { btn.textContent = "🔔 通知: ON"; btn.classList.add("on"); }
+  else { btn.textContent = "🔔 通知を有効にする"; btn.classList.remove("on"); }
+}
+notifyEnabled = localStorage.getItem("notifyEnabled") === "1" && "Notification" in window && Notification.permission === "granted";
+updateNotifyBtn();
+renderSignals();
+
+window.addEventListener("resize", () => { if (candles.length) drawChart(); });
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+
+update();
+setInterval(update, POLL_MS);
+</script>
+</body>
+</html>
