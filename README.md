@@ -71,7 +71,7 @@ npx wrangler login
 npx wrangler kv namespace create SIGNAL_DATA --config worker/wrangler.jsonc
 ```
 
-表示されたKV namespace IDを [worker/wrangler.jsonc](worker/wrangler.jsonc) の `REPLACE_WITH_KV_NAMESPACE_ID` と置き換えます。
+表示されたKV namespace IDを [worker/wrangler.jsonc](worker/wrangler.jsonc) の `kv_namespaces[].id` に設定します。このリポジトリでは、作成済みの `SIGNAL_DATA` namespace IDがすでに設定されています。
 
 ### 2. 公開元とVAPID連絡先を設定
 
@@ -82,24 +82,77 @@ npx wrangler kv namespace create SIGNAL_DATA --config worker/wrangler.jsonc
 
 別Originを複数許可する場合は `APP_ORIGIN` をカンマ区切りにします。購読登録APIは、それ以外のブラウザOriginを拒否します。
 
-### 3. VAPID鍵と管理用トークンをSecretへ登録
+### 3. Workerを初回デプロイ
 
-```bash
-npm run vapid
-npx wrangler secret put VAPID_PUBLIC_KEY --config worker/wrangler.jsonc
-npx wrangler secret put VAPID_PRIVATE_KEY --config worker/wrangler.jsonc
-npx wrangler secret put ADMIN_TOKEN --config worker/wrangler.jsonc
-```
-
-`npm run vapid` が出力した対応する公開鍵・秘密鍵を貼り付けます。`ADMIN_TOKEN`には十分に長いランダム値を設定してください。SecretをGitへコミットしないでください。
-
-### 4. Workerをデプロイ
+Cloudflare Dashboardの「Create application」を手動で行う必要はありません。次のコマンドが [worker/wrangler.jsonc](worker/wrangler.jsonc) の `name` を読み取り、`btc-regime-watch` Workerを自動作成または更新します。
 
 ```bash
 npm run deploy
 ```
 
-デプロイ後に表示される `https://...workers.dev` URLを控えます。
+初回のみ、Cloudflareから `workers.dev` サブドメインの確認を求められる場合があります。デプロイ後に表示される次の形式のURLを控えます。
+
+```text
+https://btc-regime-watch.YOUR_SUBDOMAIN.workers.dev
+```
+
+この時点ではVAPID鍵が未登録のため、Worker自体は起動しますがPush通知APIはまだ利用できません。
+
+### 4. VAPID鍵と管理用トークンをSecretへ登録
+
+まず鍵をローカルで生成します。
+
+```bash
+npm run vapid
+```
+
+次の2行が表示されます。
+
+```text
+VAPID_PUBLIC_KEY=...
+VAPID_PRIVATE_KEY=...
+```
+
+公開鍵を登録します。
+
+```bash
+npx wrangler secret put VAPID_PUBLIC_KEY --config worker/wrangler.jsonc
+```
+
+`Enter a secret value:` が表示されたら、`VAPID_PUBLIC_KEY=` より後ろの値だけを貼り付けます。引用符は不要です。
+
+続いて秘密鍵を登録します。
+
+```bash
+npx wrangler secret put VAPID_PRIVATE_KEY --config worker/wrangler.jsonc
+```
+
+同様に、`VAPID_PRIVATE_KEY=` より後ろの値だけを貼り付けます。秘密鍵を `wrangler.jsonc`、GitHub、Issue、PRへ書かないでください。
+
+管理API用のランダムトークンも生成して登録します。
+
+```bash
+openssl rand -hex 32
+npx wrangler secret put ADMIN_TOKEN --config worker/wrangler.jsonc
+```
+
+`ADMIN_TOKEN` の入力プロンプトには、直前に `openssl` が出力した値を貼り付けます。この値もGitへコミットしないでください。
+
+登録されたSecret名を確認します。値そのものは表示されません。
+
+```bash
+npx wrangler secret list --config worker/wrangler.jsonc
+```
+
+次の3つが表示されれば完了です。
+
+```text
+VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY
+ADMIN_TOKEN
+```
+
+`wrangler secret put` はSecretを暗号化保存し、Workerの新しいバージョンを即時デプロイします。Dashboardを使う場合は、初回デプロイ後に **Workers & Pages → btc-regime-watch → Settings → Variables and Secrets → Add → Secret** から、同じ3つの名前で登録できます。
 
 ### 5. PWAへWorker URLを設定
 
