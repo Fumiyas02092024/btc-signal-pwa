@@ -1,0 +1,24 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "btc-regime-watch",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "triggers": {
+    "crons": ["7,22,37,52 * * * *"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "SIGNAL_DATA",
+      "id": "fbfb27a4a21245f2a19bd62f51116d93"
+    }
+  ],
+  "vars": {
+    "APP_ORIGIN": "https://fumiyas02092024.github.io",
+    "VAPID_SUBJECT": "mailto:REPLACE_WITH_YOUR_EMAIL"
+  }
+}
