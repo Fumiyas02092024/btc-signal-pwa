@@ -1,8 +1,12 @@
 # BTC Regime Watch
 
+[公開アプリを直接開く](https://fumiyas02092024.github.io/btc-signal-pwa/)
+
 BTC/USDTの「買ってよい相場だけを選ぶ」ためのロング限定PWAです。日足のSMA200をレジームフィルター、日足SMA20と4時間足EMA20をトレンド・押し目判定、ADX/DMIをトレンド強度の確認に使います。
 
 Cloudflare WorkersのCron TriggerとWeb Pushを組み合わせているため、ブラウザのタブやインストール済みPWAを閉じている間も確定足を監視して通知できます。
+
+スマートフォンではGitHubリポジトリのURLではなく、上の公開アプリURLをSafariまたはChromeで開いてから「ホーム画面に追加」してください。すでにGitHub画面を開くショートカットがある場合は削除し、公開アプリURLから追加し直します。
 
 ## 戦略
 

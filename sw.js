@@ -1,4 +1,4 @@
-const CACHE_NAME = "btc-regime-watch-v3";
+const CACHE_NAME = "btc-regime-watch-v4";
 const APP_SHELL = [
   "./",
   "./index.html",
