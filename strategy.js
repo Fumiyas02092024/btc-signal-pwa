@@ -1,4 +1,13 @@
-export const STRATEGY_VERSION = "2026.07";
+export const STRATEGY_VERSION = "2026.08";
+
+export const SUPPORTED_SYMBOLS = Object.freeze({
+  BTCUSDT: Object.freeze({ symbol: "BTCUSDT", ticker: "BTC", name: "Bitcoin", glyph: "₿", priceDigits: 0 }),
+  ETHUSDT: Object.freeze({ symbol: "ETHUSDT", ticker: "ETH", name: "Ethereum", glyph: "Ξ", priceDigits: 2 }),
+});
+
+export function normalizeSymbol(value) {
+  return Object.hasOwn(SUPPORTED_SYMBOLS, value) ? value : "BTCUSDT";
+}
 
 const finite = value => Number.isFinite(value);
 
@@ -139,7 +148,8 @@ function condition(id, label, pass, value, required = true) {
   return { id, label, pass: Boolean(pass), value, required };
 }
 
-export function evaluateStrategy(dailyInput, h4Input) {
+export function evaluateStrategy(dailyInput, h4Input, options = {}) {
+  const symbol = normalizeSymbol(options.symbol);
   const daily = [...dailyInput].sort((a, b) => a.closeTime - b.closeTime);
   const h4 = [...h4Input].sort((a, b) => a.closeTime - b.closeTime);
   if (daily.length < 205 || h4.length < 60) {
@@ -237,7 +247,7 @@ export function evaluateStrategy(dailyInput, h4Input) {
 
   return {
     version: STRATEGY_VERSION,
-    symbol: "BTCUSDT",
+    symbol,
     evaluatedAt: Date.now(),
     candleCloseTime: h4[h].closeTime,
     state,

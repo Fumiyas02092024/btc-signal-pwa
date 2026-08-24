@@ -1,4 +1,4 @@
-const CACHE_NAME = "btc-regime-watch-v3";
+const CACHE_NAME = "crypto-regime-watch-v5";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -67,10 +67,10 @@ self.addEventListener("push", event => {
   try {
     payload = event.data?.json() || {};
   } catch {
-    payload = { body: event.data?.text() || "BTCシグナルが更新されました" };
+    payload = { body: event.data?.text() || "暗号資産シグナルが更新されました" };
   }
 
-  const title = payload.title || "BTC Regime Watch";
+  const title = payload.title || "Crypto Regime Watch";
   const options = {
     body: payload.body || "確定足の判定が更新されました",
     icon: "./icon-192.png",

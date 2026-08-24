@@ -1,8 +1,12 @@
-# BTC Regime Watch
+# Crypto Regime Watch
 
-BTC/USDTの「買ってよい相場だけを選ぶ」ためのロング限定PWAです。日足のSMA200をレジームフィルター、日足SMA20と4時間足EMA20をトレンド・押し目判定、ADX/DMIをトレンド強度の確認に使います。
+[公開アプリを直接開く](https://fumiyas02092024.github.io/btc-signal-pwa/)
 
-Cloudflare WorkersのCron TriggerとWeb Pushを組み合わせているため、ブラウザのタブやインストール済みPWAを閉じている間も確定足を監視して通知できます。
+BTC/USDTとETH/USDTの「買ってよい相場だけを選ぶ」ためのロング限定PWAです。画面上部で銘柄を切り替え、日足のSMA200をレジームフィルター、日足SMA20と4時間足EMA20をトレンド・押し目判定、ADX/DMIをトレンド強度の確認に使います。
+
+Cloudflare WorkersのCron TriggerとWeb Pushを組み合わせているため、ブラウザのタブやインストール済みPWAを閉じている間もBTC・ETH両方の確定足を監視して通知できます。通知対象は端末ごとにBTC・ETHを個別設定できます。
+
+スマートフォンではGitHubリポジトリのURLではなく、上の公開アプリURLをSafariまたはChromeで開いてから「ホーム画面に追加」してください。すでにGitHub画面を開くショートカットがある場合は削除し、公開アプリURLから追加し直します。
 
 ## 戦略
 
@@ -37,16 +41,16 @@ GitHub Pages (PWA)
 └── Push APIで端末をCloudflare Workerへ購読登録
 
 Cloudflare Worker
-├── Cron (15分ごと) で確定足を確認
+├── Cron (15分ごと) でBTC・ETHの確定足を並行確認
 ├── strategy.jsと同じ判定ロジックを実行
-├── KVに最新状態・購読先・配信カーソルを保存
+├── KVに銘柄別の最新状態・購読先・配信カーソルを保存
 └── 状態変化をWeb Pushサービスへ暗号化配信
 
 Service Worker
 └── アプリ終了中もpushイベントを受信してOS通知を表示
 ```
 
-Workerは同じ4時間足を二重通知しません。購読数が1回の実行で処理できる件数を超えた場合はKVカーソルを保存し、次回Cronで続きを配信します。Pushサービスが`404`または`410`を返した購読は自動削除します。
+WorkerはBTC・ETHそれぞれについて同じ4時間足を二重通知しません。購読数が1回の実行で処理できる件数を超えた場合は銘柄別にKVカーソルを保存し、次回Cronで続きを配信します。Pushサービスが`404`または`410`を返した購読は自動削除します。
 
 ## ローカル確認
 
@@ -179,7 +183,7 @@ curl -X POST \
   https://YOUR_WORKER.workers.dev/api/run
 ```
 
-以後は `7,22,37,52 * * * *`（UTC）のCronで15分ごとに確認します。シグナル判定自体は新しい4時間足が確定したときだけ更新されます。
+以後は `7,22,37,52 * * * *`（UTC）のCronで15分ごとにBTC・ETHを確認します。各シグナル判定は、その銘柄の新しい4時間足が確定したときだけ更新されます。
 
 ## スマートフォンの通知設定
 
@@ -190,6 +194,7 @@ curl -X POST \
 3. 共有メニューから「ホーム画面に追加」
 4. ホーム画面からPWAを起動
 5. 「通知を設定」を押して許可
+6. 「BTCを通知」「ETHを通知」で対象銘柄を選択
 
 ### Android
 
@@ -205,7 +210,8 @@ Web PushはPWAを閉じても受信できますが、OSの省電力設定、通�
 |---|---|---|
 | `GET` | `/api/health` | ヘルスチェック |
 | `GET` | `/api/config` | VAPID公開鍵 |
-| `GET` | `/api/snapshot` | Cronの最新判定 |
+| `GET` | `/api/snapshot?symbol=BTCUSDT` | BTCのCron最新判定 |
+| `GET` | `/api/snapshot?symbol=ETHUSDT` | ETHのCron最新判定 |
 | `POST` | `/api/subscriptions` | 購読登録・通知設定更新 |
 | `DELETE` | `/api/subscriptions` | 購読解除 |
 | `POST` | `/api/test` | 24時間に1回のテスト通知 |
@@ -213,7 +219,7 @@ Web PushはPWAを閉じても受信できますが、OSの省電力設定、通�
 
 ## 無料枠の目安
 
-この構成はCloudflare Workers Freeで利用できます。Cronは1日96回、KVの状態書き込みは主に4時間足確定時、購読書き込みは端末設定時だけです。利用者が増えた場合は、Workersの1日リクエスト数、KVの読み書き・list回数、1回のWorker実行における外部サブリクエスト数を監視してください。
+この構成はCloudflare Workers Freeで利用できます。Cronは1日96回で、1回のCron内でBTC・ETHをまとめて確認します。KVの状態書き込みは主に各銘柄の4時間足確定時、購読書き込みは端末設定時だけです。利用者が増えた場合は、Workersの1日リクエスト数、KVの読み書き・list回数、1回のWorker実行における外部サブリクエスト数を監視してください。
 
 - [Cloudflare Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)
 - [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)

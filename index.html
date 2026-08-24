@@ -4,8 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#07110f">
-  <meta name="description" content="日足SMA200・SMA20、4時間足EMA20、ADX/DMIでBTCのロング候補を監視するPWA">
-  <title>BTC Regime Watch</title>
+  <meta name="description" content="日足SMA200・SMA20、4時間足EMA20、ADX/DMIでBTC・ETHのロング候補を監視するPWA">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Crypto Watch">
+  <title>Crypto Regime Watch</title>
+  <link rel="canonical" href="https://fumiyas02092024.github.io/btc-signal-pwa/">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon-192.png">
@@ -14,11 +18,11 @@
 <body>
   <div class="noise" aria-hidden="true"></div>
   <header class="topbar">
-    <a class="brand" href="./" aria-label="BTC Regime Watch ホーム">
-      <span class="brand-mark">₿</span>
+    <a class="brand" href="./" aria-label="Crypto Regime Watch ホーム">
+      <span class="brand-mark" id="brandMark">₿</span>
       <span>
         <strong>REGIME WATCH</strong>
-        <small>BTC / USDT · LONG ONLY</small>
+        <small id="brandAsset">BTC / USDT · LONG ONLY</small>
       </span>
     </a>
     <div class="connection" id="connection">
@@ -28,6 +32,17 @@
   </header>
 
   <main>
+    <nav class="asset-switcher" aria-label="監視する暗号資産" role="tablist">
+      <button type="button" class="asset-tab active" data-symbol="BTCUSDT" role="tab" aria-selected="true">
+        <span class="asset-icon btc">₿</span>
+        <span><strong>Bitcoin</strong><small>BTC / USDT</small></span>
+      </button>
+      <button type="button" class="asset-tab" data-symbol="ETHUSDT" role="tab" aria-selected="false">
+        <span class="asset-icon eth">Ξ</span>
+        <span><strong>Ethereum</strong><small>ETH / USDT</small></span>
+      </button>
+    </nav>
+
     <section class="hero">
       <div class="hero-copy">
         <p class="eyebrow">DAILY REGIME × 4H EXECUTION</p>
@@ -35,7 +50,7 @@
         <p class="lead">SMA200を環境認識、SMA20 / EMA20を押し目、ADX / DMIをトレンド強度として分離。確定足だけで判定します。</p>
       </div>
       <div class="price-block">
-        <span class="caption">BTC / USDT</span>
+        <span class="caption" id="assetCaption">BTC / USDT</span>
         <strong id="price">—</strong>
         <span class="price-change" id="priceChange">4時間足を取得中</span>
       </div>
@@ -156,7 +171,7 @@
           </div>
           <span class="push-status" id="pushStatus">未設定</span>
         </div>
-        <p>Cloudflare Workerがアプリを閉じている間も確定足を監視し、Web Pushで通知します。</p>
+        <p>Cloudflare Workerがアプリを閉じている間もBTC・ETHの確定足を監視し、Web Pushで通知します。</p>
         <div class="push-actions">
           <button class="primary" id="pushButton">通知を設定</button>
           <button class="ghost" id="settingsButton">Worker URL</button>
@@ -166,6 +181,18 @@
           <span></span>
           WATCHへの変化も通知
         </label>
+        <div class="asset-notification-options" aria-label="通知する銘柄">
+          <label class="toggle">
+            <input id="notifyBtcToggle" type="checkbox" checked>
+            <span></span>
+            BTCを通知
+          </label>
+          <label class="toggle">
+            <input id="notifyEthToggle" type="checkbox" checked>
+            <span></span>
+            ETHを通知
+          </label>
+        </div>
         <p class="support-note">iPhoneはiOS 16.4以降で、ホーム画面へ追加したPWAから通知許可してください。</p>
       </article>
     </section>

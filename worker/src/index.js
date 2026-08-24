@@ -3,6 +3,8 @@ import {
   closedCandles,
   evaluateStrategy,
   normalizeKlines,
+  normalizeSymbol,
+  SUPPORTED_SYMBOLS,
 } from "../../strategy.js";
 
 const API_HOSTS = [
@@ -12,8 +14,9 @@ const API_HOSTS = [
   "https://data-api.binance.vision",
 ];
 const MAX_BODY_BYTES = 8_192;
-const DELIVERY_BATCH_SIZE = 20;
+const DELIVERY_BATCH_SIZE = 10;
 const SUBSCRIPTION_PREFIX = "subscription:";
+const SYMBOLS = Object.keys(SUPPORTED_SYMBOLS);
 const PUSH_HOST_SUFFIXES = [
   "fcm.googleapis.com",
   "push.services.mozilla.com",
@@ -129,10 +132,23 @@ async function endpointHash(endpoint) {
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
+async function secretsEqual(value, secret) {
+  if (typeof value !== "string" || typeof secret !== "string") return false;
+  const encoder = new TextEncoder();
+  const candidate = encoder.encode(value);
+  const expected = encoder.encode(secret);
+  if (candidate.byteLength !== expected.byteLength) return false;
+  return crypto.subtle.timingSafeEqual(candidate, expected);
+}
+
 function normalizePreferences(value = {}) {
+  const symbols = Array.isArray(value.symbols)
+    ? [...new Set(value.symbols.filter(symbol => Object.hasOwn(SUPPORTED_SYMBOLS, symbol)))]
+    : SYMBOLS;
   return {
     notifyWatch: Boolean(value.notifyWatch),
     notifyRiskOff: value.notifyRiskOff !== false,
+    symbols,
   };
 }
 
@@ -161,19 +177,19 @@ async function sendPush(subscription, payload, env) {
 
 async function fetchJson(url) {
   const response = await fetch(url, {
-    headers: { "user-agent": "btc-regime-watch/2.0" },
+    headers: { "user-agent": "crypto-regime-watch/3.0" },
   });
   if (!response.ok) throw new Error(`Market API ${response.status}`);
   return response.json();
 }
 
-async function fetchMarketData() {
+async function fetchMarketData(symbol) {
   let lastError;
   for (const host of API_HOSTS) {
     try {
       const [dailyRows, h4Rows] = await Promise.all([
-        fetchJson(`${host}/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=320`),
-        fetchJson(`${host}/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=260`),
+        fetchJson(`${host}/api/v3/klines?symbol=${symbol}&interval=1d&limit=320`),
+        fetchJson(`${host}/api/v3/klines?symbol=${symbol}&interval=4h&limit=260`),
       ]);
       return {
         daily: closedCandles(normalizeKlines(dailyRows)),
@@ -187,6 +203,7 @@ async function fetchMarketData() {
 }
 
 function pushPayload(snapshot) {
+  const asset = SUPPORTED_SYMBOLS[snapshot.symbol];
   const stateLabel = snapshot.state === "READY"
     ? "エントリー候補"
     : snapshot.state === "WATCH"
@@ -196,13 +213,13 @@ function pushPayload(snapshot) {
     ? `${snapshot.headline} · ADX ${snapshot.h4.adx.toFixed(1)} · Entry ${snapshot.levels.entry.toLocaleString("en-US")} / Stop ${snapshot.levels.stop.toLocaleString("en-US")}`
     : `${snapshot.headline} · 条件 ${snapshot.score}/${snapshot.scoreMax} · ADX ${snapshot.h4.adx.toFixed(1)}`;
   return {
-    title: `BTC ${stateLabel}`,
+    title: `${asset.ticker} ${stateLabel}`,
     body: details,
     state: snapshot.state,
     timestamp: snapshot.candleCloseTime,
-    tag: `btc-${snapshot.state}-${snapshot.candleCloseTime}`,
+    tag: `${asset.ticker.toLowerCase()}-${snapshot.state}-${snapshot.candleCloseTime}`,
     renotify: snapshot.state === "READY",
-    url: "./",
+    url: `./?symbol=${snapshot.symbol}`,
   };
 }
 
@@ -214,16 +231,19 @@ function notificationKind(current, previous) {
   return null;
 }
 
-function wantsNotification(preferences, kind) {
+function wantsNotification(preferences, kind, symbol) {
+  const normalized = normalizePreferences(preferences);
+  if (!normalized.symbols.includes(symbol)) return false;
   if (kind === "READY") return true;
-  if (kind === "WATCH") return preferences.notifyWatch;
-  if (kind === "RISK_OFF") return preferences.notifyRiskOff;
+  if (kind === "WATCH") return normalized.notifyWatch;
+  if (kind === "RISK_OFF") return normalized.notifyRiskOff;
   return false;
 }
 
 async function createPending(snapshot, kind, env) {
-  await env.SIGNAL_DATA.put("delivery:pending", JSON.stringify({
-    id: `${snapshot.candleCloseTime}:${kind}`,
+  await env.SIGNAL_DATA.put(`delivery:pending:${snapshot.symbol}`, JSON.stringify({
+    id: `${snapshot.symbol}:${snapshot.candleCloseTime}:${kind}`,
+    symbol: snapshot.symbol,
     kind,
     cursor: null,
     payload: pushPayload(snapshot),
@@ -233,8 +253,9 @@ async function createPending(snapshot, kind, env) {
   }), { expirationTtl: 60 * 60 * 24 });
 }
 
-async function deliverPending(env) {
-  const pending = await env.SIGNAL_DATA.get("delivery:pending", "json");
+async function deliverPending(symbol, env) {
+  const pendingKey = `delivery:pending:${symbol}`;
+  const pending = await env.SIGNAL_DATA.get(pendingKey, "json");
   if (!pending) return { pending: false, sent: 0, failed: 0 };
 
   const page = await env.SIGNAL_DATA.list({
@@ -247,7 +268,7 @@ async function deliverPending(env) {
 
   for (const key of page.keys) {
     const record = await env.SIGNAL_DATA.get(key.name, "json");
-    if (!record || !wantsNotification(record.preferences || {}, pending.kind)) continue;
+    if (!record || !wantsNotification(record.preferences || {}, pending.kind, symbol)) continue;
     try {
       const response = await sendPush(record.subscription, pending.payload, env);
       if (response.ok) {
@@ -267,14 +288,14 @@ async function deliverPending(env) {
   const totals = { sent: pending.sent + sent, failed: pending.failed + failed };
   if (page.list_complete) {
     await Promise.all([
-      env.SIGNAL_DATA.delete("delivery:pending"),
+      env.SIGNAL_DATA.delete(pendingKey),
       env.SIGNAL_DATA.put(`delivery:result:${pending.id}`, JSON.stringify({
         ...totals,
         completedAt: Date.now(),
       }), { expirationTtl: 60 * 60 * 24 * 30 }),
     ]);
   } else {
-    await env.SIGNAL_DATA.put("delivery:pending", JSON.stringify({
+    await env.SIGNAL_DATA.put(pendingKey, JSON.stringify({
       ...pending,
       cursor: page.cursor,
       ...totals,
@@ -284,19 +305,44 @@ async function deliverPending(env) {
 }
 
 async function runMonitor(env) {
-  const market = await fetchMarketData();
-  const current = evaluateStrategy(market.daily, market.h4);
-  const previous = await env.SIGNAL_DATA.get("signal:latest", "json");
-  const isNewCandle = !previous || previous.candleCloseTime !== current.candleCloseTime;
+  const markets = await Promise.all(SYMBOLS.map(async symbol => {
+    try {
+      return { symbol, market: await fetchMarketData(symbol), error: null };
+    } catch (error) {
+      console.error("market fetch failed", { symbol, message: error.message });
+      return { symbol, market: null, error: error.message };
+    }
+  }));
+  const results = [];
 
-  if (isNewCandle) {
-    const kind = notificationKind(current, previous);
-    await env.SIGNAL_DATA.put("signal:latest", JSON.stringify(current));
-    if (kind) await createPending(current, kind, env);
+  for (const { symbol, market, error } of markets) {
+    if (!market) {
+      results.push({ symbol, error });
+      continue;
+    }
+    const current = evaluateStrategy(market.daily, market.h4, { symbol });
+    const latestKey = `signal:latest:${symbol}`;
+    const previous = await env.SIGNAL_DATA.get(latestKey, "json")
+      || (symbol === "BTCUSDT" ? await env.SIGNAL_DATA.get("signal:latest", "json") : null);
+    const isNewCandle = !previous || previous.candleCloseTime !== current.candleCloseTime;
+
+    if (isNewCandle) {
+      const kind = notificationKind(current, previous);
+      await env.SIGNAL_DATA.put(latestKey, JSON.stringify(current));
+      if (kind) await createPending(current, kind, env);
+    }
+    results.push({ symbol, snapshot: current, isNewCandle });
   }
 
-  const delivery = await deliverPending(env);
-  return { snapshot: current, isNewCandle, delivery };
+  if (!results.some(result => result.snapshot)) {
+    throw new Error("All market data requests failed");
+  }
+
+  const deliveries = await Promise.all(SYMBOLS.map(async symbol => ({
+    symbol,
+    ...(await deliverPending(symbol, env)),
+  })));
+  return { results, deliveries };
 }
 
 async function saveSubscription(request, env) {
@@ -328,11 +374,11 @@ async function testSubscription(request, env) {
     return { ok: true, skipped: true, message: "テスト通知は24時間に1回です" };
   }
   const response = await sendPush(subscription, {
-    title: "BTC Regime Watch",
-    body: "バックグラウンド通知の設定が完了しました。",
+    title: "Crypto Regime Watch",
+    body: "BTC・ETHのバックグラウンド通知設定が完了しました。",
     state: "TEST",
     timestamp: Date.now(),
-    tag: `btc-test-${hash.slice(0, 12)}`,
+    tag: `crypto-test-${hash.slice(0, 12)}`,
     url: "./",
   }, env);
   if (!response.ok) throw new HttpError(502, `Pushサービスが${response.status}を返しました`);
@@ -350,14 +396,20 @@ async function route(request, env, ctx) {
   }
 
   if (url.pathname === "/api/health" && request.method === "GET") {
-    return json({ ok: true, service: "btc-regime-watch", time: Date.now() }, 200, cors);
+    return json({ ok: true, service: "crypto-regime-watch", symbols: SYMBOLS, time: Date.now() }, 200, cors);
   }
   if (url.pathname === "/api/config" && request.method === "GET") {
     if (!env.VAPID_PUBLIC_KEY) throw new HttpError(503, "VAPID公開鍵が未設定です");
     return json({ vapidPublicKey: env.VAPID_PUBLIC_KEY }, 200, cors);
   }
   if (url.pathname === "/api/snapshot" && request.method === "GET") {
-    const latest = await env.SIGNAL_DATA.get("signal:latest", "json");
+    const requestedSymbol = url.searchParams.get("symbol") || "BTCUSDT";
+    if (!Object.hasOwn(SUPPORTED_SYMBOLS, requestedSymbol)) {
+      throw new HttpError(400, "対応していない銘柄です");
+    }
+    const symbol = normalizeSymbol(requestedSymbol);
+    const latest = await env.SIGNAL_DATA.get(`signal:latest:${symbol}`, "json")
+      || (symbol === "BTCUSDT" ? await env.SIGNAL_DATA.get("signal:latest", "json") : null);
     return latest ? json(latest, 200, cors) : json({ error: "まだCron判定がありません" }, 404, cors);
   }
   if (url.pathname === "/api/subscriptions" && request.method === "POST") {
@@ -374,15 +426,16 @@ async function route(request, env, ctx) {
   }
   if (url.pathname === "/api/run" && request.method === "POST") {
     const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-    if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) throw new HttpError(401, "Unauthorized");
+    if (!env.ADMIN_TOKEN || !await secretsEqual(token, env.ADMIN_TOKEN)) throw new HttpError(401, "Unauthorized");
     const result = await runMonitor(env);
     return json(result, 200, cors);
   }
   if (url.pathname === "/" && request.method === "GET") {
     return json({
-      service: "BTC Regime Watch Push Worker",
+      service: "Crypto Regime Watch Push Worker",
+      symbols: SYMBOLS,
       health: "/api/health",
-      snapshot: "/api/snapshot",
+      snapshot: "/api/snapshot?symbol=BTCUSDT",
     }, 200, cors);
   }
   return json({ error: "Not found" }, 404, cors);
@@ -404,10 +457,13 @@ export default {
       runMonitor(env).then(result => {
         console.log("scheduled monitor complete", {
           scheduledTime: controller.scheduledTime,
-          state: result.snapshot.state,
-          candle: result.snapshot.candleCloseTime,
-          isNewCandle: result.isNewCandle,
-          delivery: result.delivery,
+          results: result.results.map(item => item.snapshot ? {
+            symbol: item.symbol,
+            state: item.snapshot.state,
+            candle: item.snapshot.candleCloseTime,
+            isNewCandle: item.isNewCandle,
+          } : { symbol: item.symbol, error: item.error }),
+          deliveries: result.deliveries,
         });
       }),
     );
