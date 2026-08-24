@@ -73,6 +73,7 @@ button { cursor: pointer; }
   font-size: 1.45rem;
   box-shadow: 0 0 30px rgba(187, 244, 81, .16);
 }
+.brand-mark.eth { background: #8ca8ff; }
 
 .brand strong, .brand small { display: block; }
 .brand strong { font-size: .84rem; }
@@ -105,6 +106,53 @@ main {
   margin: 0 auto;
   padding: 64px 0 calc(40px + env(safe-area-inset-bottom));
 }
+
+.asset-switcher {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 6px;
+  margin-bottom: 34px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(8, 21, 18, .75);
+}
+
+.asset-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 7px 14px 7px 8px;
+  border-color: transparent;
+  border-radius: 11px;
+  text-align: left;
+  background: transparent;
+}
+
+.asset-tab.active {
+  border-color: rgba(187, 244, 81, .34);
+  background: var(--surface-2);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .16);
+}
+
+.asset-icon {
+  display: grid;
+  place-items: center;
+  width: 35px;
+  height: 35px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  color: #07110f;
+  font-size: 1.1rem;
+  font-weight: 900;
+}
+
+.asset-icon.btc { background: #f5a623; }
+.asset-icon.eth { background: #8ca8ff; }
+.asset-tab strong, .asset-tab small { display: block; }
+.asset-tab strong { font-size: .74rem; }
+.asset-tab small { margin-top: 3px; color: var(--muted); font-size: .58rem; letter-spacing: .06em; }
 
 .hero {
   display: grid;
@@ -388,6 +436,14 @@ button.ghost { background: transparent; }
   transition: transform .2s ease;
 }
 .toggle input:checked + span::after { transform: translateX(14px); background: var(--lime); }
+.asset-notification-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(32, 58, 51, .55);
+}
 .support-note { margin: 14px 0 0 !important; font-size: .61rem !important; }
 
 .compare-card, .log-card { margin: 12px 0; }
@@ -493,6 +549,9 @@ dialog p { color: var(--muted); font-size: .7rem; line-height: 1.6; }
   .topbar, main { width: min(100% - 22px, 1240px); }
   .topbar { min-height: 66px; }
   main { padding-top: 32px; }
+  .asset-switcher { width: 100%; grid-template-columns: 1fr 1fr; margin-bottom: 26px; }
+  .asset-tab { min-width: 0; padding-right: 8px; }
+  .asset-icon { width: 31px; height: 31px; }
   .brand-mark { width: 36px; height: 36px; }
   .connection #connectionText { display: none; }
   h1 { font-size: 2.25rem; }

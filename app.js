@@ -4,6 +4,8 @@ import {
   emaSeries,
   evaluateStrategy,
   normalizeKlines,
+  normalizeSymbol,
+  SUPPORTED_SYMBOLS,
 } from "./strategy.js";
 
 const API_HOSTS = [
@@ -17,6 +19,8 @@ const $ = id => document.getElementById(id);
 
 let snapshot = null;
 let h4Candles = [];
+let activeSymbol = normalizeSymbol(new URLSearchParams(location.search).get("symbol")
+  || localStorage.getItem("regimeWatchSymbol"));
 let serviceWorkerRegistration = null;
 let toastTimer;
 let workerUrl = normalizeWorkerUrl(
@@ -75,13 +79,13 @@ async function fetchJson(url, options) {
   return response.json();
 }
 
-async function fetchMarketData() {
+async function fetchMarketData(symbol) {
   let lastError;
   for (const host of API_HOSTS) {
     try {
       const [dailyRows, h4Rows] = await Promise.all([
-        fetchJson(`${host}/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=320`),
-        fetchJson(`${host}/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=260`),
+        fetchJson(`${host}/api/v3/klines?symbol=${symbol}&interval=1d&limit=320`),
+        fetchJson(`${host}/api/v3/klines?symbol=${symbol}&interval=4h&limit=260`),
       ]);
       return {
         daily: closedCandles(normalizeKlines(dailyRows)),
@@ -115,6 +119,13 @@ function setupLabel(value) {
 
 function renderSnapshot(result) {
   snapshot = result;
+  const asset = SUPPORTED_SYMBOLS[result.symbol];
+  document.title = `${asset.ticker} Regime Watch`;
+  $("brandMark").textContent = asset.glyph;
+  $("brandMark").classList.toggle("eth", result.symbol === "ETHUSDT");
+  $("assetCaption").textContent = `${asset.ticker} / USDT`;
+  $("brandAsset").textContent = `${asset.ticker} / USDT · LONG ONLY`;
+  $("chart").setAttribute("aria-label", `${asset.ticker} 4時間足チャート`);
   const panel = $("signalPanel");
   panel.dataset.state = result.state;
   $("stateBadge").textContent = result.state;
@@ -130,7 +141,7 @@ function renderSnapshot(result) {
     return item;
   }));
 
-  $("price").textContent = money(result.h4.close);
+  $("price").textContent = money(result.h4.close, asset.priceDigits);
   const latest = h4Candles.at(-1);
   const previous = h4Candles.at(-2);
   const change = latest && previous ? ((latest.c / previous.c) - 1) * 100 : 0;
@@ -140,11 +151,11 @@ function renderSnapshot(result) {
   const bull = result.regime === "BULL";
   $("regime").textContent = bull ? "強気" : "見送り";
   setTone($("regime"), bull ? "positive" : "negative");
-  $("regimeDetail").textContent = `終値 ${money(result.daily.close)} / SMA200 ${money(result.daily.sma200)}`;
+  $("regimeDetail").textContent = `終値 ${money(result.daily.close, asset.priceDigits)} / SMA200 ${money(result.daily.sma200, asset.priceDigits)}`;
 
   $("dailyTrend").textContent = result.daily.sma20Rising ? "上向き" : "横ばい・下向き";
   setTone($("dailyTrend"), result.daily.sma20Rising ? "positive" : "warning");
-  $("dailyTrendDetail").textContent = `SMA20 ${money(result.daily.sma20)}`;
+  $("dailyTrendDetail").textContent = `SMA20 ${money(result.daily.sma20, asset.priceDigits)}`;
 
   $("adx").textContent = result.h4.adx >= 25 ? "明確" : result.h4.adx >= 20 ? "発生中" : "弱い";
   setTone($("adx"), result.h4.adx >= 20 ? "positive" : "warning");
@@ -170,10 +181,10 @@ function renderSnapshot(result) {
     return row;
   }));
 
-  $("entryLevel").textContent = money(result.levels.entry);
-  $("stopLevel").textContent = money(result.levels.stop);
-  $("target1Level").textContent = money(result.levels.target1);
-  $("target2Level").textContent = money(result.levels.target2);
+  $("entryLevel").textContent = money(result.levels.entry, asset.priceDigits);
+  $("stopLevel").textContent = money(result.levels.stop, asset.priceDigits);
+  $("target1Level").textContent = money(result.levels.target1, asset.priceDigits);
+  $("target2Level").textContent = money(result.levels.target2, asset.priceDigits);
 
   const steps = $("strategySteps");
   steps.replaceChildren(...result.strategyComparison.map(item => {
@@ -209,7 +220,12 @@ function renderPosition() {
 }
 
 function renderHistory(result) {
-  const history = JSON.parse(localStorage.getItem("btcDecisionHistory") || "[]");
+  const historyKey = `regimeDecisionHistory:${result.symbol}`;
+  const legacyHistory = result.symbol === "BTCUSDT" ? localStorage.getItem("btcDecisionHistory") : null;
+  const history = JSON.parse(localStorage.getItem(historyKey) || legacyHistory || "[]");
+  if (!localStorage.getItem(historyKey) && legacyHistory) {
+    localStorage.setItem(historyKey, JSON.stringify(history.slice(0, 30)));
+  }
   if (!history.some(item => item.candleCloseTime === result.candleCloseTime)) {
     history.unshift({
       candleCloseTime: result.candleCloseTime,
@@ -217,10 +233,10 @@ function renderHistory(result) {
       headline: result.headline,
       score: result.score,
     });
-    localStorage.setItem("btcDecisionHistory", JSON.stringify(history.slice(0, 30)));
+    localStorage.setItem(historyKey, JSON.stringify(history.slice(0, 30)));
   }
 
-  const current = JSON.parse(localStorage.getItem("btcDecisionHistory") || "[]");
+  const current = JSON.parse(localStorage.getItem(historyKey) || "[]");
   const container = $("history");
   if (!current.length) return;
   container.replaceChildren(...current.slice(0, 12).map(item => {
@@ -282,7 +298,8 @@ function drawChart() {
     context.moveTo(padding.left, yy);
     context.lineTo(width - padding.right, yy);
     context.stroke();
-    context.fillText(`$${Math.round(price).toLocaleString("en-US")}`, width - padding.right + 8, yy);
+    const digits = SUPPORTED_SYMBOLS[activeSymbol].priceDigits;
+    context.fillText(`$${price.toLocaleString("en-US", { maximumFractionDigits: digits })}`, width - padding.right + 8, yy);
   }
 
   const candleWidth = Math.max(2, (plotWidth / view.length) * 0.62);
@@ -341,9 +358,11 @@ async function update() {
   $("connectionText").textContent = "更新中";
   $("refreshButton").disabled = true;
   try {
-    const market = await fetchMarketData();
+    const symbolAtRequest = activeSymbol;
+    const market = await fetchMarketData(symbolAtRequest);
+    if (symbolAtRequest !== activeSymbol) return;
     h4Candles = market.h4;
-    renderSnapshot(evaluateStrategy(market.daily, market.h4));
+    renderSnapshot(evaluateStrategy(market.daily, market.h4, { symbol: symbolAtRequest }));
     $("connection").className = "connection online";
     $("connectionText").textContent = `更新 ${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`;
   } catch (error) {
@@ -381,6 +400,10 @@ function subscriptionPayload(subscription) {
     preferences: {
       notifyWatch: $("watchToggle").checked,
       notifyRiskOff: true,
+      symbols: [
+        ...($("notifyBtcToggle").checked ? ["BTCUSDT"] : []),
+        ...($("notifyEthToggle").checked ? ["ETHUSDT"] : []),
+      ],
     },
   };
 }
@@ -453,6 +476,8 @@ async function togglePush() {
 
 async function updatePreferences() {
   localStorage.setItem("btcNotifyWatch", $("watchToggle").checked ? "1" : "0");
+  localStorage.setItem("regimeNotifyBTC", $("notifyBtcToggle").checked ? "1" : "0");
+  localStorage.setItem("regimeNotifyETH", $("notifyEthToggle").checked ? "1" : "0");
   const subscription = await currentSubscription();
   if (!subscription || !workerUrl) return;
   try {
@@ -465,6 +490,31 @@ async function updatePreferences() {
   } catch (error) {
     toast(`通知条件の更新に失敗しました: ${error.message}`);
   }
+}
+
+async function selectAsset(symbol) {
+  const normalized = normalizeSymbol(symbol);
+  if (normalized === activeSymbol && snapshot) return;
+  activeSymbol = normalized;
+  snapshot = null;
+  h4Candles = [];
+  localStorage.setItem("regimeWatchSymbol", activeSymbol);
+  const nextUrl = new URL(location.href);
+  nextUrl.searchParams.set("symbol", activeSymbol);
+  history.replaceState(null, "", nextUrl);
+  document.querySelectorAll("[data-symbol]").forEach(button => {
+    const selected = button.dataset.symbol === activeSymbol;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  });
+  $("assetCaption").textContent = `${SUPPORTED_SYMBOLS[activeSymbol].ticker} / USDT`;
+  $("brandAsset").textContent = `${SUPPORTED_SYMBOLS[activeSymbol].ticker} / USDT · LONG ONLY`;
+  $("brandMark").textContent = SUPPORTED_SYMBOLS[activeSymbol].glyph;
+  $("brandMark").classList.toggle("eth", activeSymbol === "ETHUSDT");
+  $("price").textContent = "—";
+  $("priceChange").textContent = "4時間足を取得中";
+  $("history").innerHTML = '<p class="empty">最初の判定を待っています。</p>';
+  await update();
 }
 
 function openSettings() {
@@ -497,6 +547,8 @@ async function saveSettings(event) {
 
 async function initialize() {
   $("watchToggle").checked = localStorage.getItem("btcNotifyWatch") === "1";
+  $("notifyBtcToggle").checked = localStorage.getItem("regimeNotifyBTC") !== "0";
+  $("notifyEthToggle").checked = localStorage.getItem("regimeNotifyETH") !== "0";
   $("capital").addEventListener("input", renderPosition);
   $("riskPercent").addEventListener("change", renderPosition);
   $("refreshButton").addEventListener("click", update);
@@ -504,6 +556,19 @@ async function initialize() {
   $("settingsButton").addEventListener("click", openSettings);
   $("saveSettings").addEventListener("click", saveSettings);
   $("watchToggle").addEventListener("change", updatePreferences);
+  $("notifyBtcToggle").addEventListener("change", updatePreferences);
+  $("notifyEthToggle").addEventListener("change", updatePreferences);
+  document.querySelectorAll("[data-symbol]").forEach(button => {
+    button.addEventListener("click", () => selectAsset(button.dataset.symbol));
+    const selected = button.dataset.symbol === activeSymbol;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  });
+  const initialAsset = SUPPORTED_SYMBOLS[activeSymbol];
+  $("assetCaption").textContent = `${initialAsset.ticker} / USDT`;
+  $("brandAsset").textContent = `${initialAsset.ticker} / USDT · LONG ONLY`;
+  $("brandMark").textContent = initialAsset.glyph;
+  $("brandMark").classList.toggle("eth", activeSymbol === "ETHUSDT");
   window.addEventListener("resize", drawChart);
 
   if ("serviceWorker" in navigator) {

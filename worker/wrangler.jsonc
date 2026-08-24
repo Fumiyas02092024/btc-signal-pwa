@@ -2,7 +2,7 @@
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "btc-regime-watch",
   "main": "src/index.js",
-  "compatibility_date": "2026-07-01",
+  "compatibility_date": "2026-08-23",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "observability": {

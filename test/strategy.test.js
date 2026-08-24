@@ -6,6 +6,7 @@ import {
   dmiAdx,
   emaSeries,
   evaluateStrategy,
+  normalizeSymbol,
   sma,
 } from "../strategy.js";
 
@@ -42,6 +43,19 @@ test("日足がSMA200より下ならRISK_OFF", () => {
   const result = evaluateStrategy(daily, h4);
   assert.equal(result.state, "RISK_OFF");
   assert.equal(result.regime, "BEAR_OR_NEUTRAL");
+});
+
+test("ETHも同じ戦略で銘柄を保持して判定する", () => {
+  const daily = trendCandles(220, 1_000, 3, 24 * 60 * 60 * 1000);
+  const h4 = trendCandles(100, 2_000, 2, 4 * 60 * 60 * 1000);
+  const result = evaluateStrategy(daily, h4, { symbol: "ETHUSDT" });
+  assert.equal(result.symbol, "ETHUSDT");
+  assert.equal(result.scoreMax, 8);
+});
+
+test("未対応銘柄はBTCへ正規化する", () => {
+  assert.equal(normalizeSymbol("ETHUSDT"), "ETHUSDT");
+  assert.equal(normalizeSymbol("DOGEUSDT"), "BTCUSDT");
 });
 
 test("ポジションサイズは許容損失とStop幅から逆算する", () => {

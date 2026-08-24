@@ -1,8 +1,8 @@
 {
   "id": "/btc-signal-pwa/",
-  "name": "BTC Regime Watch",
-  "short_name": "BTC Watch",
-  "description": "日足SMA200・SMA20、4時間足EMA20、ADX/DMIでBTCのロング候補を監視",
+  "name": "Crypto Regime Watch",
+  "short_name": "Crypto Watch",
+  "description": "日足SMA200・SMA20、4時間足EMA20、ADX/DMIでBTC・ETHのロング候補を監視",
   "lang": "ja",
   "start_url": "/btc-signal-pwa/",
   "scope": "/btc-signal-pwa/",
